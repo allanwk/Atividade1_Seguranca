@@ -1,0 +1,5 @@
+Ao entrar, o cliente envia sua chave publica para os outros clientes
+
+Ao receber uma chave publica, o cliente deve responder com sua chave simetrica
+criptografada com essa chave publica
+Ao receber uma chave simetrica, o cliente deve manter a chave simetrica mais antiga
