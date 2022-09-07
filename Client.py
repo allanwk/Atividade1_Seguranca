@@ -12,6 +12,8 @@ import pickle
 from Crypto.PublicKey import RSA
 from Crypto import Random
 from Crypto.Cipher import PKCS1_OAEP
+from Crypto.Signature.pkcs1_15 import PKCS115_SigScheme
+from Crypto.Hash import SHA256
 from cryptography.fernet import Fernet
 
 
@@ -68,7 +70,8 @@ class Client(threading.Thread):
         s = ''
         self.connect(host, port)
         #print("Connected\n")
-        user_name = input("Enter the User Name to be Used\n>>")
+        #user_name = input("Enter the User Name to be Used\n>>")
+        user_name = "Allan"
         receive = self.sock
         time.sleep(1)
         srv = Server(self.queue)
@@ -78,18 +81,16 @@ class Client(threading.Thread):
         srv.start()
 
         #Geração e envio da chave pública
-        key = RSA.generate(2048)
-        self.private_key_export = key.export_key('PEM')
-        self.public_key_export = key.publickey().exportKey('PEM')
+        self.key_pair = RSA.generate(2048)
+        self.private_key_export = self.key_pair.export_key('PEM')
+        self.public_key_export = self.key_pair.publickey().exportKey('PEM')
 
         to_send = {}
         to_send["PUB"] = self.public_key_export
         dataString = pickle.dumps(to_send)
         self.client(host, port, dataString)
 
-        #Geração da chave simétrica
-        # self.sym_key = Fernet.generate_key()
-        self.sym_key = None
+        self.chave_simetrica = None
 
         printIn = True
         while 1:
@@ -105,16 +106,19 @@ class Client(threading.Thread):
                     break
                 if msg == '':
                     continue
-                if self.sym_key is None:
+                if self.chave_simetrica is None:
                     print("Chave simétrica ainda não definida - não existem outros usuários conectados")
                     printIn = True
                     continue
 
                 msg = user_name + ': ' + msg
-                f = Fernet(self.sym_key)
-                encrypted = f.encrypt(msg.encode())
+                f = Fernet(self.chave_simetrica)
+                mensagem_criptografada = f.encrypt(msg.encode())
+                hash_mensagem = SHA256.new(msg.encode("UTF-8")).hexdigest()
+                
                 to_send = {}
-                to_send["MSG"] = encrypted
+                to_send["MSG"] = mensagem_criptografada
+                to_send["HASH"] = hash_mensagem
                 dataString = pickle.dumps(to_send)
                 self.client(host, port, dataString)
                 printIn = True
@@ -124,40 +128,77 @@ class Client(threading.Thread):
                     msg = self.queue.get(block=False)
                     try:
                         data = pickle.loads(msg)
-                        #Ao receber uma chave publica, responde com a chave simétrica
-                        #criptografada
-                        if "PUB" in data:
-                            rsa_public_key = RSA.importKey(data["PUB"])
-                            rsa_public_key = PKCS1_OAEP.new(rsa_public_key)
-                            if self.sym_key is None:
-                                print("Gerando chave simétrica")
-                                self.sym_key = Fernet.generate_key()
+                    except Exception as e:
+                        print("ERRO: não foi recebido um objeto pickle", e)
+                        continue
 
-                            encrypted_sym_key = rsa_public_key.encrypt(self.sym_key)
-                            to_send = {}
-                            to_send["SYM"] = encrypted_sym_key
-                            dataString = pickle.dumps(to_send)
-                            self.client(host, port, dataString)
-                            print("Chave publica recebida, respondendo com a chave simetrica")
+                    #Ao receber uma chave publica, responde com a chave simétrica
+                    #criptografada, assinatura digital da hash da chave e sua chave publica
+                    if "PUB" in data and "SYM" not in data: 
+                        #Mensagem sem chave simétrica representa o pedido de envio da chave simétrica
+                        rsa_public_key = RSA.importKey(data["PUB"])
+                        rsa_public_key = PKCS1_OAEP.new(rsa_public_key)
+                        if self.chave_simetrica is None:
+                            print("Gerando chave simétrica")
+                            self.chave_simetrica = Fernet.generate_key()
+
+                        chave_simetrica_criptografada = rsa_public_key.encrypt(self.chave_simetrica)
                         
-                        if "SYM" in data:
-                            rsa_private_key = RSA.importKey(self.private_key_export)
-                            rsa_private_key = PKCS1_OAEP.new(rsa_private_key)
-                            decrypted_text = rsa_private_key.decrypt(data["SYM"])
-                            print("Chave simétrica recebida: ", decrypted_text)
-                            if self.sym_key is None:
-                                self.sym_key = decrypted_text
-                            elif self.sym_key != decrypted_text:
-                                print("ERRO: cliente já tinha chave simétrica e recebeu uma diferente")
+                        hash_chave_simetrica = SHA256.new(self.chave_simetrica)
+                        signer = PKCS115_SigScheme(self.key_pair)
+                        assinatura = signer.sign(hash_chave_simetrica)
+
+                        to_send = {}
+                        to_send["SYM"] = chave_simetrica_criptografada
+                        to_send["SIGN"] = assinatura
+                        to_send["PUB"] = self.public_key_export
+                        dataString = pickle.dumps(to_send)
+                        self.client(host, port, dataString)
+                        print("Chave publica recebida, respondendo com a chave simetrica, assinatura e chave publica")
+                    
+                    if "SYM" in data: #Recebimento da chave simétrica, chave pública da origem e assinatura digital
+                        if "SIGN" not in data:
+                            print("ERRO: assinatura digital da hash não foi enviada junto com a chave simétrica")
+                            exit(0)
+
+                        rsa_private_key = RSA.importKey(self.private_key_export)
+                        rsa_private_key = PKCS1_OAEP.new(rsa_private_key)
+                        chave_simetrica_recebida = rsa_private_key.decrypt(data["SYM"])
                         
-                        if "MSG" in data:
-                            f = Fernet(self.sym_key)
-                            decrypted = f.decrypt(data["MSG"])
-                            print(decrypted.decode())
-                    except:
-                        print(msg.decode())
-                except:
+                        pub_key_origem = RSA.importKey(data["PUB"])
+                        hash_chave_simetrica = SHA256.new(chave_simetrica_recebida)
+                        verifier = PKCS115_SigScheme(pub_key_origem)
+
+                        try:
+                            verifier.verify(hash_chave_simetrica, data["SIGN"])
+                        except:
+                            print("Assinatura digital inválida")
+                            exit(0)
+
+                        print("Chave simétrica recebida: ", chave_simetrica_recebida)
+
+                        if self.chave_simetrica is None:
+                            self.chave_simetrica = chave_simetrica_recebida
+                        elif self.chave_simetrica != chave_simetrica_recebida:
+                            print("ERRO: cliente já tinha chave simétrica e recebeu uma diferente")
+                    
+                    if "MSG" in data: #Recebimento de mensagens, deve conter a hash
+                        if "HASH" not in data:
+                            print("ERRO: mensagem sem hash")
+                            exit(0)
+                        
+                        f = Fernet(self.chave_simetrica)
+                        mensagem_recebida = f.decrypt(data["MSG"])
+                        hash_mensagem_recebida = SHA256.new(mensagem_recebida).hexdigest()
+                        if hash_mensagem_recebida != data["HASH"]:
+                            print("ERRO: hash incorreta")
+                            exit(0)
+
+                        print(mensagem_recebida.decode())
+                        
+                except: #Fila de recebimento vazia
                     break
+
         return (1)
 
 
