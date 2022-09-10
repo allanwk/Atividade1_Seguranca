@@ -93,7 +93,9 @@ class Client(threading.Thread):
         self.chave_simetrica = None
 
         printIn = True
-        while 1:
+        exit = False
+
+        while not exit:
             if printIn:
                 print(">>", end="")
                 sys.stdout.flush()
@@ -103,6 +105,7 @@ class Client(threading.Thread):
             for item in read:
                 msg = input()
                 if msg == 'exit':
+                    exit = True
                     break
                 if msg == '':
                     continue

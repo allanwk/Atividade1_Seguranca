@@ -23,6 +23,7 @@ class Server(threading.Thread):
         print("Server started on port 5535")
 
     def run(self):
+        global SOCKET_LIST
         while 1:
             read, write, err = select.select(SOCKET_LIST, [], [], 0)
             for sock in read:
@@ -36,8 +37,9 @@ class Server(threading.Thread):
                 else:
                     try:
                         s = sock.recv(1024)
-                        if s == '':
-                            print(str(sock.getpeername()))
+                        if s == '' or s == b'':
+                            print("Desconectando:" , str(sock.getpeername()))
+                            SOCKET_LIST.remove(sock)
                             continue
                         else:
                             TO_BE_SENT.append(s)
