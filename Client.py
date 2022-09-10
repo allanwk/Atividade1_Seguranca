@@ -178,12 +178,13 @@ class Client(threading.Thread):
                             print("Assinatura digital inválida")
                             exit(0)
 
-                        print("Chave simétrica recebida: ", chave_simetrica_recebida)
-
                         if self.chave_simetrica is None:
                             self.chave_simetrica = chave_simetrica_recebida
                         elif self.chave_simetrica != chave_simetrica_recebida:
                             print("ERRO: cliente já tinha chave simétrica e recebeu uma diferente")
+                            if chave_simetrica_recebida > self.chave_simetrica:
+                                self.chave_simetrica = chave_simetrica_recebida
+                        print("Utilizando a chave: ", self.chave_simetrica)
                     
                     if "MSG" in data: #Recebimento de mensagens, deve conter a hash
                         if "HASH" not in data:
