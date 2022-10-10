@@ -36,9 +36,9 @@ class Server(threading.Thread):
 
                 else:
                     try:
-                        s = sock.recv(1024)
+                        s = sock.recv(2048)
                         if s == '' or s == b'':
-                            print("Desconectando:" , str(sock.getpeername()))
+                            print("Desconectando:", str(sock.getpeername()))
                             SOCKET_LIST.remove(sock)
                             continue
                         else:
