@@ -38,7 +38,6 @@ class Server(threading.Thread):
             read, write, err = select.select(lis, [], [])
             for item in read:
                 try:
-                    # print("trying to receive")
                     s = item.recv(2048)
                     if s != '':
                         chunk = s
@@ -54,7 +53,6 @@ class Client(threading.Thread):
 
     def client(self, host, port, msg):
         sent = self.sock.send(msg)
-        # print "Sent\n"
 
     def __init__(self, queue):
         self.queue = queue
@@ -64,10 +62,8 @@ class Client(threading.Thread):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         try:
-            # host = input("Enter the server IP \n>>")
-            # port = int(input("Enter the server Destination Port\n>>"))
-            host = "localhost"
-            port = 5535
+            host = input("Enter the server IP \n>>")
+            port = int(input("Enter the server Destination Port\n>>"))
         except EOFError:
             print("Error")
             return 1
@@ -75,9 +71,8 @@ class Client(threading.Thread):
         print("Connecting\n")
         s = ''
         self.connect(host, port)
-        # print("Connected\n")
-        #user_name = input("Enter the User Name to be Used\n>>")
-        user_name = "Allan"
+        print("Connected\n")
+        user_name = input("Enter the User Name to be Used\n>>")
         receive = self.sock
         time.sleep(1)
         srv = Server(self.queue)
@@ -116,9 +111,6 @@ class Client(threading.Thread):
                 if msg == '':
                     continue
                 if self.chave_simetrica is None:
-                    print(
-                        "Chave simétrica ainda não definida - não existem outros usuários conectados")
-                    printIn = True
                     continue
 
                 msg = user_name + ': ' + msg
@@ -139,7 +131,6 @@ class Client(threading.Thread):
                     try:
                         data = pickle.loads(msg)
                     except Exception as e:
-                        print("ERRO: não foi recebido um objeto pickle", e)
                         continue
 
                     # Ao receber uma chave publica, responde com a chave simétrica
@@ -149,7 +140,6 @@ class Client(threading.Thread):
                         rsa_public_key = RSA.importKey(data[pubcode])
                         rsa_public_key = PKCS1_OAEP.new(rsa_public_key)
                         if self.chave_simetrica is None:
-                            print("Gerando chave simétrica")
                             self.chave_simetrica = Fernet.generate_key()
 
                         chave_simetrica_criptografada = rsa_public_key.encrypt(
@@ -165,14 +155,10 @@ class Client(threading.Thread):
                         to_send[pubcode] = self.public_key_export
                         dataString = pickle.dumps(to_send)
                         self.client(host, port, dataString)
-                        print(
-                            "Chave publica recebida, respondendo com a chave simetrica, assinatura e chave publica")
 
                     if symcode in data:  # Recebimento da chave simétrica, chave pública da origem e assinatura digital
                         if signcode not in data:
-                            print(
-                                "ERRO: assinatura digital da hash não foi enviada junto com a chave simétrica")
-                            exit(0)
+                            continue
 
                         rsa_private_key = RSA.importKey(
                             self.private_key_export)
@@ -189,30 +175,24 @@ class Client(threading.Thread):
                             verifier.verify(
                                 hash_chave_simetrica, data[signcode])
                         except:
-                            print("Assinatura digital inválida")
-                            exit(0)
+                            continue
 
                         if self.chave_simetrica is None:
                             self.chave_simetrica = chave_simetrica_recebida
                         elif self.chave_simetrica != chave_simetrica_recebida:
-                            print(
-                                "ERRO: cliente já tinha chave simétrica e recebeu uma diferente")
                             if chave_simetrica_recebida > self.chave_simetrica:
                                 self.chave_simetrica = chave_simetrica_recebida
-                        print("Utilizando a chave: ", self.chave_simetrica)
 
                     if msgcode in data:  # Recebimento de mensagens, deve conter a hash
                         if hashcode not in data:
-                            print("ERRO: mensagem sem hash")
-                            exit(0)
+                            continue
 
                         f = Fernet(self.chave_simetrica)
                         mensagem_recebida = f.decrypt(data[msgcode])
                         hash_mensagem_recebida = SHA256.new(
                             mensagem_recebida).hexdigest()
                         if hash_mensagem_recebida != data[hashcode]:
-                            print("ERRO: hash incorreta")
-                            exit(0)
+                            continue
 
                         print(mensagem_recebida.decode())
 
