@@ -195,6 +195,7 @@ class Client(threading.Thread):
                             continue
 
                         print(mensagem_recebida.decode())
+                        printIn = True
 
                 except:  # Fila de recebimento vazia
                     break
